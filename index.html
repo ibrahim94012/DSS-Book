@@ -71,6 +71,10 @@
   .nav-btn.answered { background:var(--green-bg); border-color:var(--green); color:var(--green); font-weight:bold; }
   .nav-btn.flagged { background:var(--amber-bg); border-color:var(--amber); color:var(--amber); font-weight:bold; }
   .nav-btn.current { outline:3px solid var(--primary); }
+  .level-btn { aspect-ratio:1; border-radius:6px; border:1.5px solid var(--border); background:var(--card-bg); color:var(--text); cursor:pointer; font-size:0.72rem; font-family:inherit; display:flex; align-items:center; justify-content:center; font-weight:bold; }
+  .level-btn.locked { background:var(--bg); color:var(--muted); cursor:not-allowed; opacity:0.55; }
+  .level-btn.passed { background:var(--green-bg); border-color:var(--green); color:var(--green); }
+  .level-btn.selected { outline:3px solid var(--primary); }
   .legend { display:flex; gap:14px; font-size:0.72rem; color:var(--muted); flex-wrap:wrap; margin-bottom:12px; }
   .legend span { display:inline-flex; align-items:center; gap:4px; }
   .legend .dot { width:10px; height:10px; border-radius:3px; display:inline-block; }
@@ -131,7 +135,7 @@
   .review-item .ra.correct { color:var(--green); }
   .review-item .expl { font-size:0.8rem; color:var(--muted); margin-top:4px; }
 
-  .footer-note { margin-top:20px; padding:14px; background:var(--card-bg); border-left:4px solid var(--accent); font-size:0.8rem; border-radius:6px; color:var(--muted); }
+  .footer-note { display:none; margin-top:20px; padding:14px; background:var(--card-bg); border-left:4px solid var(--accent); font-size:0.8rem; border-radius:6px; color:var(--muted); }
   .hidden { display:none !important; }
 
   /* Printable paper */
@@ -163,8 +167,8 @@
     <button class="pill-btn" id="fontDec">A-</button>
     <button class="pill-btn" id="fontInc">A+</button>
   </div>
-  <h1>সমাজসেবা অধিদপ্তর (DSS) — সম্পূর্ণ ডাইনামিক টেস্ট পেপার</h1>
-  <p>বিষয়ভিত্তিক প্রশ্ন সংখ্যা, MCQ/CQ ধরন এবং সময় নিজে নির্বাচন করুন</p>
+  <h1>সমাজসেবা অধিদপ্তর (DSS) টেস্ট পেপার</h1>
+  <p></p>
 </div>
 
 <div class="wrap">
@@ -182,17 +186,14 @@
     </div>
 
     <div class="panel">
-      <h3>২. লেভেল নির্বাচন করুন (১ – ১০০) — লেভেল যত বাড়বে প্রশ্ন তত কঠিন হবে</h3>
-      <div class="inline-row">
-        <input type="range" id="levelSlider" min="1" max="100" value="1" style="flex:1;min-width:180px;">
-        <span id="levelValue" style="font-weight:bold;color:var(--primary);min-width:110px;">লেভেল ১</span>
-      </div>
-      <div class="chip-row" style="margin-top:8px;">
-        <button class="chip" data-level="1">লেভেল ১ (শুরু)</button>
-        <button class="chip" data-level="25">লেভেল ২৫</button>
-        <button class="chip" data-level="50">লেভেল ৫০</button>
-        <button class="chip" data-level="75">লেভেল ৭৫</button>
-        <button class="chip" data-level="100">লেভেল ১০০ (সর্বোচ্চ)</button>
+      <h3>২. লেভেল বাছাই করুন — গেম মোড (১ – ১০০)</h3>
+      <p class="hint" id="levelProgressText"></p>
+      <div class="navigator" id="levelGrid" style="max-height:260px;overflow-y:auto;"></div>
+      <div class="legend" style="margin-top:10px;">
+        <span><span class="dot" style="background:var(--bg);border:1.5px solid var(--border);"></span> লকড 🔒</span>
+        <span><span class="dot" style="background:var(--card-bg);border:1.5px solid var(--primary);"></span> আনলকড, খেলা যাবে</span>
+        <span><span class="dot" style="background:var(--green-bg);border:1.5px solid var(--green);"></span> পাস করা হয়েছে</span>
+        <span><span class="dot" style="background:var(--card-bg);border:3px solid var(--primary);"></span> এখন নির্বাচিত</span>
       </div>
       <p class="hint" id="levelHint"></p>
     </div>
@@ -511,26 +512,40 @@ const LABELS = ['ক','খ','গ','ঘ'];
 function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function pick(arr){ return arr[randInt(0,arr.length-1)]; }
 
-/* ================= Level / difficulty system (১–১০০) ================= */
-let currentLevel = 1;
+/* ================= Level / difficulty system — GAME MODE (১–১০০) ================= */
+let currentLevel = 1;     // level currently selected to play
+let unlockedLevel = 1;    // highest level unlocked so far (must pass exams sequentially)
+const PASS_PERCENT = 60;        // minimum % correct required to pass a level's exam
+const MIN_LEVEL_QUESTIONS = 10; // exam must have at least this many MCQ questions to count
 const DIFFICULTY_LABELS = ['সহজ (Easy)', 'মাঝারি (Medium)', 'কঠিন (Hard)', 'অতি কঠিন (Expert)'];
 function tierFromLevel(level) { return Math.min(3, Math.floor((level - 1) / 25)); } // 0..3
 function tierLabel(level) { return DIFFICULTY_LABELS[tierFromLevel(level)]; }
-function updateLevelUI() {
-  document.getElementById('levelSlider').value = currentLevel;
-  document.getElementById('levelValue').textContent = `লেভেল ${bn(currentLevel)}`;
-  document.getElementById('levelHint').textContent = `বর্তমান কঠিনতা: ${tierLabel(currentLevel)} — লেভেল যত ১০০-এর কাছাকাছি যাবে, স্বয়ংক্রিয়ভাবে তৈরি প্রশ্নগুলো তত জটিল ও চ্যালেঞ্জিং হতে থাকবে (মোট ৪ ধাপের কঠিনতা, লেভেল ১-১০০ জুড়ে)।`;
+
+function buildLevelGrid() {
+  const grid = document.getElementById('levelGrid');
+  grid.innerHTML = '';
+  for (let lvl = 1; lvl <= 100; lvl++) {
+    const btn = document.createElement('button');
+    const locked = lvl > unlockedLevel;
+    const passed = lvl < unlockedLevel; // strictly below the current frontier means it was already cleared
+    btn.className = 'level-btn' + (locked ? ' locked' : '') + (passed ? ' passed' : '') + (lvl === currentLevel ? ' selected' : '');
+    btn.textContent = locked ? '🔒' : bn(lvl);
+    btn.title = locked ? `লেভেল ${bn(lvl)} — এখনো লক করা আছে` : `লেভেল ${bn(lvl)} (${tierLabel(lvl)})`;
+    btn.disabled = locked;
+    if (!locked) {
+      btn.addEventListener('click', () => {
+        currentLevel = lvl;
+        updateLevelUI();
+      });
+    }
+    grid.appendChild(btn);
+  }
 }
-document.getElementById('levelSlider').addEventListener('input', (e) => {
-  currentLevel = parseInt(e.target.value, 10) || 1;
-  updateLevelUI();
-});
-document.querySelectorAll('.chip-row [data-level]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    currentLevel = parseInt(btn.dataset.level, 10);
-    updateLevelUI();
-  });
-});
+function updateLevelUI() {
+  document.getElementById('levelProgressText').textContent = `আপনি এখন পর্যন্ত লেভেল ${bn(unlockedLevel)} পর্যন্ত আনলক করেছেন — নির্বাচিত লেভেল: ${bn(currentLevel)} (${tierLabel(currentLevel)})`;
+  document.getElementById('levelHint').textContent = `একটি লেভেল পাস করতে হলে সেই লেভেলে কমপক্ষে ${bn(MIN_LEVEL_QUESTIONS)}টি প্রশ্নের একটি MCQ এক্সাম দিয়ে অন্তত ${bn(PASS_PERCENT)}% সঠিক উত্তর করতে হবে — তাহলেই পরবর্তী লেভেল আনলক হবে। মোট ৪ ধাপে (সহজ → মাঝারি → কঠিন → অতি কঠিন) কঠিনতা বাড়তে থাকবে লেভেল ১-১০০ জুড়ে।`;
+  buildLevelGrid();
+}
 updateLevelUI();
 
 /* ================= Procedural infinite math generator (level-aware, ১-১০০) ================= */
@@ -945,7 +960,8 @@ function startMcqSession() {
   session = {
     questions, answers: new Array(questions.length).fill(null),
     flagged: new Set(), visited: new Set(), current: 0,
-    mode: examMode ? 'exam' : 'practice', negativeMarking, timerMin: selectedTimerMin
+    mode: examMode ? 'exam' : 'practice', negativeMarking, timerMin: selectedTimerMin,
+    level: currentLevel
   };
   document.getElementById('setupScreen').style.display = 'none';
   document.getElementById('resultScreen').classList.remove('active');
@@ -1104,6 +1120,25 @@ function showResult() {
   const percentage = total ? Math.round((rawScore/total)*100) : 0;
   attemptHistory.push({ score: rawScore.toFixed(2), total, percentage, mode: (session.mode==='exam'?'এক্সাম':'প্র্যাকটিস')+' (MCQ)', time: new Date().toLocaleTimeString('bn-BD',{hour:'2-digit',minute:'2-digit'}) });
 
+  const attemptedLevel = session.level || 1;
+  const isLevelAttempt = total >= MIN_LEVEL_QUESTIONS;
+  const levelPassed = isLevelAttempt && percentage >= PASS_PERCENT;
+  let justUnlocked = null;
+  if (levelPassed && attemptedLevel + 1 > unlockedLevel && attemptedLevel < 100) {
+    unlockedLevel = Math.min(100, attemptedLevel + 1);
+    justUnlocked = unlockedLevel;
+  }
+  let levelBannerHtml = '';
+  if (isLevelAttempt) {
+    if (levelPassed) {
+      levelBannerHtml = `<div class="source-note real" style="margin-bottom:12px;font-size:0.85rem;">🎉 <b>অভিনন্দন!</b> আপনি লেভেল ${bn(attemptedLevel)} পাস করেছেন (${bn(percentage)}% ≥ ${bn(PASS_PERCENT)}%)।` + (justUnlocked ? ` লেভেল ${bn(justUnlocked)} এখন আনলক হয়েছে!` : (attemptedLevel >= 100 ? ' আপনি সর্বোচ্চ লেভেলে পৌঁছে গেছেন!' : ' এই লেভেলটি আপনি আগেই আনলক করে রেখেছিলেন।')) + `</div>`;
+    } else {
+      levelBannerHtml = `<div class="source-note gen" style="margin-bottom:12px;font-size:0.85rem;">❌ লেভেল ${bn(attemptedLevel)} পাস করতে দরকার কমপক্ষে ${bn(PASS_PERCENT)}%, আপনি পেয়েছেন ${bn(percentage)}%। পরের লেভেল আনলক করতে আবার চেষ্টা করুন!</div>`;
+    }
+  } else {
+    levelBannerHtml = `<div class="hint" style="margin-bottom:12px;">লেভেল পাস গণনা করতে কমপক্ষে ${bn(MIN_LEVEL_QUESTIONS)}টি প্রশ্নসহ এক্সাম দিতে হবে (এই অ্যাটেম্পটে ${bn(total)}টি প্রশ্ন ছিল, তাই এটি লেভেলের জন্য গণনা হয়নি)।</div>`;
+  }
+
   let sectHtml = '<div class="sect-bars">';
   Object.keys(bySubject).forEach(subj => {
     const s = bySubject[subj]; const p = s.total ? Math.round((s.correct/s.total)*100) : 0;
@@ -1116,6 +1151,7 @@ function showResult() {
   resultScreen.innerHTML = `
     <div class="panel">
       <h2 style="text-align:center;color:var(--primary);margin-top:0;">🎯 ফলাফল (MCQ)</h2>
+      ${levelBannerHtml}
       <div class="result-score">${rawScore.toFixed(session.negativeMarking?2:0)} / ${bn(total)}</div>
       <div class="result-sub">সঠিক: ${bn(correct)} | ভুল: ${bn(wrong)} | উত্তর দেওয়া হয়নি: ${bn(unanswered)} | শতকরা: ${bn(percentage)}%</div>
       ${sectHtml}
@@ -1146,7 +1182,7 @@ function showResult() {
   document.getElementById('showAllBtn').addEventListener('click', () => { document.getElementById('showAllBtn').classList.add('active'); document.getElementById('showWrongBtn').classList.remove('active'); renderReview(false); });
   document.getElementById('showWrongBtn').addEventListener('click', () => { document.getElementById('showWrongBtn').classList.add('active'); document.getElementById('showAllBtn').classList.remove('active'); renderReview(true); });
   document.getElementById('retryBtn').addEventListener('click', () => { resultScreen.classList.remove('active'); startMcqSession(); });
-  document.getElementById('backSetupBtn').addEventListener('click', () => { resultScreen.classList.remove('active'); document.getElementById('setupScreen').style.display='block'; renderHistoryPanel(); window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('backSetupBtn').addEventListener('click', () => { resultScreen.classList.remove('active'); document.getElementById('setupScreen').style.display='block'; updateLevelUI(); renderHistoryPanel(); window.scrollTo({top:0,behavior:'smooth'}); });
   document.getElementById('downloadBtn').addEventListener('click', () => downloadMcqReport(correct, wrong, unanswered, total, percentage, rawScore, bySubject));
   window.scrollTo({top:0, behavior:'smooth'});
   renderHistoryPanel();
